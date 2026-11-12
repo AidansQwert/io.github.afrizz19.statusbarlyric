@@ -132,6 +132,19 @@ object LyricController {
         val text = active?.text?.takeIf { it.isNotBlank() }
         render(text)
         pushWordProgress(style, active, pos)
+        pushLineProgress(active, pos)
+    }
+
+    /** Tells the views how far through the current line playback is (negative hides it). */
+    private fun pushLineProgress(active: ActiveLine?, pos: Long) {
+        val fraction = if (active == null) {
+            -1f
+        } else {
+            val end = if (active.sungEndMs > active.startMs) active.sungEndMs else active.endMs
+            val span = end - active.startMs
+            if (span <= 0L) -1f else ((pos - active.startMs).toFloat() / span).coerceIn(0f, 1f)
+        }
+        for (slot in slots) slot.lyric.get()?.setLineProgress(fraction)
     }
 
     /**
