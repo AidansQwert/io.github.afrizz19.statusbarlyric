@@ -2,14 +2,16 @@ package io.github.afrizz19.statusbarlyric.xposed
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.ViewPropertyAnimator
-import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import io.github.afrizz19.statusbarlyric.prefs.LyricPrefs
 
@@ -48,6 +50,74 @@ class LyricView(context: Context) : TextView(context) {
     private var inDraw = false
     /** Set once a karaoke frame has failed, so the log gets one entry and not one per frame. */
     private var loggedSweepFailure = false
+
+    // Thin progress line under the lyric (0..1 of the current line; < 0 = hidden).
+    private var lineProgress = -1f
+    private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val progressRect = RectF()
+    private var loggedProgressFailure = false
+
+    /**
+     * Sets how far through the current line playback is (0..1), or a negative value to
+     * hide the progress line. Cheap to call every tick: it only redraws on a visible change.
+     */
+    fun setLineProgress(fraction: Float) {
+        if (!SHOW_PROGRESS) return
+        val v = if (fraction < 0f) -1f else fraction.coerceIn(0f, 1f)
+        if (kotlin.math.abs(v - lineProgress) < 0.004f && (v >= 0f) == (lineProgress >= 0f)) return
+        lineProgress = v
+        invalidate()
+    }
+
+    /**
+     * Drawn after everything else in [draw], on its own — independent of the multi-pass
+     * [onDraw] (outline, karaoke) so it cannot interfere with the sweep. Purely cosmetic:
+     * any failure is swallowed (and logged once) rather than risking a SystemUI crash.
+     */
+    override fun draw(canvas: Canvas) {
+        super.draw(canvas)
+        if (!SHOW_PROGRESS || lineProgress < 0f) return
+        try {
+            drawProgress(canvas)
+        } catch (t: Throwable) {
+            if (!loggedProgressFailure) {
+                loggedProgressFailure = true
+                de.robv.android.xposed.XposedBridge.log(
+                    "StatusBarLyric16: progress line disabled: " +
+                        android.util.Log.getStackTraceString(t)
+                )
+            }
+        }
+    }
+
+    private fun drawProgress(canvas: Canvas) {
+        val l = layout ?: return
+        // Two-row lines already use the full height; skip the line there.
+        if (l.lineCount != 1) return
+        val d = resources.displayMetrics.density
+        val thick = PROGRESS_DP * d
+        val left = totalPaddingLeft.toFloat()
+        val right = (width - totalPaddingRight).toFloat()
+        if (right - left < thick * 4f) return
+        val bottom = height - PROGRESS_BOTTOM_DP * d
+        val top = bottom - thick
+        if (top < 0f) return
+
+        // Follows the lyric colour so it suits light and dark status bars on any ROM.
+        val base = currentTextColor
+        val a = Color.alpha(base)
+        val r = Color.red(base)
+        val g = Color.green(base)
+        val b = Color.blue(base)
+
+        progressRect.set(left, top, right, bottom)
+        progressPaint.color = Color.argb((a * 0.22f).toInt(), r, g, b)
+        canvas.drawRoundRect(progressRect, thick / 2f, thick / 2f, progressPaint)
+
+        progressRect.set(left, top, left + (right - left) * lineProgress, bottom)
+        progressPaint.color = Color.argb((a * 0.9f).toInt(), r, g, b)
+        canvas.drawRoundRect(progressRect, thick / 2f, thick / 2f, progressPaint)
+    }
 
     // Word-mode (karaoke) highlight state.
     private var wordCharOffset = 0f
@@ -636,8 +706,16 @@ class LyricView(context: Context) : TextView(context) {
     private fun twoRowTextSize(): Float {
         val available = height.takeIf { it > 0 } ?: (parent as? ViewGroup)?.height ?: 0
         if (available <= 0) return baseTextSizePx * FALLBACK_SCALE
-        // Each row occupies roughly textSize * LINE_SPACING_MULT * 1.2 vertically.
-        return minOf(baseTextSizePx, available / (2f * LINE_SPACING_MULT * 1.2f))
+        // Use the typeface's real line height (descent - ascent) instead of a guessed
+        // 1.2x factor, so descenders (y, g, p) of the second row are never clipped.
+        // A scratch Paint is used so the view's own paint is left untouched.
+        val probe = Paint(paint).apply { textSize = PROBE_SIZE }
+        val fm = probe.fontMetrics
+        val lineRatio = (fm.descent - fm.ascent) / PROBE_SIZE
+        return minOf(
+            baseTextSizePx,
+            available * FIT_SAFETY / (2f * LINE_SPACING_MULT * lineRatio),
+        )
     }
 
     companion object {
@@ -647,10 +725,17 @@ class LyricView(context: Context) : TextView(context) {
         private const val START_MARGIN_DP = 4
         /** Only used before the view has a height to measure against. */
         private const val FALLBACK_SCALE = 0.65f
-        private const val LINE_SPACING_MULT = 0.92f
-        private const val FADE_MS = 160L
-        private const val SHIFT_DP = 5f
-        private val EASING = AccelerateDecelerateInterpolator()
+        private const val LINE_SPACING_MULT = 1.0f
+        /** Headroom so two rows never touch the status bar edges. */
+        private const val FIT_SAFETY = 0.94f
+        private const val PROBE_SIZE = 100f
+        /** Master switch for the progress line under the lyric. */
+        private const val SHOW_PROGRESS = true
+        private const val PROGRESS_DP = 2f
+        private const val PROGRESS_BOTTOM_DP = 1f
+        private const val FADE_MS = 200L
+        private const val SHIFT_DP = 3f
+        private val EASING = DecelerateInterpolator()
 
         fun create(clock: TextView): LyricView =
             LyricView(clock.context).apply {
