@@ -9,7 +9,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.ViewPropertyAnimator
-import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import io.github.afrizz19.statusbarlyric.prefs.LyricPrefs
 
@@ -636,8 +636,16 @@ class LyricView(context: Context) : TextView(context) {
     private fun twoRowTextSize(): Float {
         val available = height.takeIf { it > 0 } ?: (parent as? ViewGroup)?.height ?: 0
         if (available <= 0) return baseTextSizePx * FALLBACK_SCALE
-        // Each row occupies roughly textSize * LINE_SPACING_MULT * 1.2 vertically.
-        return minOf(baseTextSizePx, available / (2f * LINE_SPACING_MULT * 1.2f))
+        // Use the typeface's real line height (descent - ascent) instead of a guessed
+        // 1.2x factor, so descenders (y, g, p) of the second row are never clipped.
+        // A scratch Paint is used so the view's own paint is left untouched.
+        val probe = Paint(paint).apply { textSize = PROBE_SIZE }
+        val fm = probe.fontMetrics
+        val lineRatio = (fm.descent - fm.ascent) / PROBE_SIZE
+        return minOf(
+            baseTextSizePx,
+            available * FIT_SAFETY / (2f * LINE_SPACING_MULT * lineRatio),
+        )
     }
 
     companion object {
@@ -647,10 +655,13 @@ class LyricView(context: Context) : TextView(context) {
         private const val START_MARGIN_DP = 4
         /** Only used before the view has a height to measure against. */
         private const val FALLBACK_SCALE = 0.65f
-        private const val LINE_SPACING_MULT = 0.92f
-        private const val FADE_MS = 160L
-        private const val SHIFT_DP = 5f
-        private val EASING = AccelerateDecelerateInterpolator()
+        private const val LINE_SPACING_MULT = 1.0f
+        /** Headroom so two rows never touch the status bar edges. */
+        private const val FIT_SAFETY = 0.94f
+        private const val PROBE_SIZE = 100f
+        private const val FADE_MS = 200L
+        private const val SHIFT_DP = 3f
+        private val EASING = DecelerateInterpolator()
 
         fun create(clock: TextView): LyricView =
             LyricView(clock.context).apply {
