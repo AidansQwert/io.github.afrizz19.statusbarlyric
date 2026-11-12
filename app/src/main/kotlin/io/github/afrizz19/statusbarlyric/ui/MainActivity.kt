@@ -9,11 +9,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -25,7 +27,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.darkColorScheme
@@ -41,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.afrizz19.statusbarlyric.BuildConfig
@@ -71,8 +74,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = AppColors) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    SetupScreen()
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color(0xFF0A0A12),
+                    // An off-palette colour has no matching on-colour, so state it.
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    Box(Modifier.fillMaxSize()) {
+                        GlassBackground()
+                        SetupScreen()
+                    }
                 }
             }
         }
@@ -84,72 +95,101 @@ private fun SetupScreen() {
     val context = LocalContext.current
     val prefs = remember { LyricPrefs.of(context) }
     var style by remember { mutableStateOf(LyricPrefs.style(prefs)) }
+    var tab by remember { mutableStateOf(0) }
 
     fun update(next: LyricPrefs.Style) {
         style = next
         LyricPrefs.save(prefs, next)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            // Before the scroll, so the viewport itself is inset: the status bar and
-            // gesture bar never overlap the content, scrolled or not.
-            .windowInsetsPadding(WindowInsets.systemBars)
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Header()
-
-        if (!LyricPrefs.sharedWithHook) InactiveWarning()
-
-        SectionLabel("Preview")
-        StylePreview(style)
-
-        SectionLabel("Settings")
-        SyncSetting(style) { update(it) }
-        ModeSetting(style) { update(it) }
-        ColorSetting(style) { update(it) }
-        ShadowSetting(style) { update(it) }
-        OutlineSetting(style) { update(it) }
-
-        SectionLabel("Setup")
-        Step(
-            1,
-            "Enable in LSPosed",
-            "Open LSPosed → Modules → enable \"Status Bar Lyric\", and tick " +
-                "System UI in its scope.",
-        )
-        Step(
-            2,
-            "Reboot (or restart SystemUI)",
-            "The hook is installed when SystemUI starts.",
-        )
-        Step(
-            3,
-            "Play a song",
-            "YouTube Music (incl. ReVanced) or Spotify. The lyric replaces the " +
-                "clock while a line is showing, and the clock returns when playback stops.",
-        )
-
-        Card(modifier = Modifier.padding(top = 4.dp)) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Lyrics API", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "All lyrics come from lrcmux, a public third-party service — " +
-                        "${LrcMuxApiClient.DEFAULT_BASE_URL}/get?artist=…&title=…",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+    // Inset the whole screen, so the status bar and gesture bar never overlap content.
+    Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars)) {
+        // Pinned above the scroll area: every slider change is visible without scrolling.
+        Column(
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StylePreview(style)
         }
 
-        Text(
-            "No notification access or companion service is needed — SystemUI can " +
-                "already read media sessions.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Footer()
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Header()
+
+            if (!LyricPrefs.sharedWithHook) InactiveWarning()
+
+            GlassTabs(listOf("Style", "Timing", "Setup"), tab) { tab = it }
+
+            when (tab) {
+                0 -> {
+                    ColorSetting(style) { update(it) }
+                    ShadowSetting(style) { update(it) }
+                    OutlineSetting(style) { update(it) }
+                    ProgressSetting(style) { update(it) }
+                }
+                1 -> {
+                    SyncSetting(style) { update(it) }
+                    ModeSetting(style) { update(it) }
+                }
+                else -> {
+                    Step(
+                        1,
+                        "Enable in LSPosed",
+                        "Open LSPosed → Modules → enable \"Status Bar Lyric\", and tick " +
+                            "System UI in its scope.",
+                    )
+                    Step(
+                        2,
+                        "Reboot (or restart SystemUI)",
+                        "The hook is installed when SystemUI starts.",
+                    )
+                    Step(
+                        3,
+                        "Play a song",
+                        "YouTube Music (incl. ReVanced) or Spotify. The lyric replaces the " +
+                            "clock while a line is showing, and the clock returns when playback stops.",
+                    )
+
+                    GlassCard {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Lyrics API", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "All lyrics come from lrcmux, a public third-party service — " +
+                                    "${LrcMuxApiClient.DEFAULT_BASE_URL}/get?artist=…&title=…",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+
+                    Text(
+                        "No notification access or companion service is needed — SystemUI can " +
+                            "already read media sessions.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Footer()
+                }
+            }
+        }
+    }
+}
+
+/** Turns the thin progress line under the status bar lyric on or off. */
+@Composable
+private fun ProgressSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -> Unit) {
+    GlassCard {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ToggleHeader("Progress line", style.progressOn) { onChange(style.copy(progressOn = it)) }
+            Text(
+                "A thin line under single-row lyrics that fills as the line is sung. " +
+                    "It takes the lyric colour and is hidden on two-row lyrics.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
@@ -170,11 +210,23 @@ private fun StylePreview(style: LyricPrefs.Style) {
         ) else null,
     )
 
-    Box(
+    val stripShape = RoundedCornerShape(22.dp)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF202124), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .clip(stripShape)
+            .background(Color(0xFF05050A).copy(alpha = 0.78f))
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.06f)),
+                ),
+                stripShape,
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.CenterStart,
     ) {
         // Stroke behind, fill on top — the same two passes the status bar view does.
@@ -207,6 +259,23 @@ private fun StylePreview(style: LyricPrefs.Style) {
             )
         }
     }
+    if (style.progressOn) {
+        Box(
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(fill.copy(alpha = 0.22f), CircleShape),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(PREVIEW_SUNG_FRACTION)
+                    .height(2.dp)
+                    .background(fill.copy(alpha = 0.9f), CircleShape),
+            )
+        }
+    }
+    }
 }
 
 /**
@@ -217,7 +286,7 @@ private fun StylePreview(style: LyricPrefs.Style) {
 private fun ModeSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -> Unit) {
     val wordMode = style.mode == LyricPrefs.MODE_WORD
 
-    Card {
+    GlassCard {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleHeader("Per-word (karaoke)", wordMode) {
                 onChange(style.copy(mode = if (it) LyricPrefs.MODE_WORD else LyricPrefs.MODE_LINE))
@@ -269,7 +338,7 @@ private fun ModeSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) ->
  */
 @Composable
 private fun SyncSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -> Unit) {
-    Card {
+    GlassCard {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -309,7 +378,7 @@ private fun SyncSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) ->
 
 @Composable
 private fun ColorSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -> Unit) {
-    Card {
+    GlassCard {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Lyric colour", style = MaterialTheme.typography.titleSmall)
 
@@ -337,7 +406,7 @@ private fun ColorSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -
 
 @Composable
 private fun ShadowSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -> Unit) {
-    Card {
+    GlassCard {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleHeader("Shadow", style.shadowOn) { onChange(style.copy(shadowOn = it)) }
 
@@ -361,7 +430,7 @@ private fun ShadowSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) 
 
 @Composable
 private fun OutlineSetting(style: LyricPrefs.Style, onChange: (LyricPrefs.Style) -> Unit) {
-    Card {
+    GlassCard {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleHeader("Outline", style.outlineOn) { onChange(style.copy(outlineOn = it)) }
 
@@ -492,7 +561,7 @@ private fun Swatch(color: Int, isSelected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun Step(number: Int, title: String, body: String) {
-    Card {
+    GlassCard {
         Row(
             modifier = Modifier.padding(14.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -546,9 +615,14 @@ private fun Header() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.linearGradient(listOf(Color(0xFF42308C), Color(0xFF1B5560))),
-                RoundedCornerShape(24.dp),
+            .clip(RoundedCornerShape(30.dp))
+            .background(Brush.linearGradient(listOf(Color(0x996B4BE8), Color(0x6618A8B0))))
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.6f), Color.White.copy(alpha = 0.1f)),
+                ),
+                RoundedCornerShape(30.dp),
             )
             .padding(20.dp),
     ) {
@@ -595,12 +669,7 @@ private fun Pill(text: String, onClick: (() -> Unit)? = null) {
 /** Shown when LSPosed isn't active for this app, so settings can't reach SystemUI. */
 @Composable
 private fun InactiveWarning() {
-    Card(
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        ),
-    ) {
+    GlassCard(tint = Color(0xFFFF6B6B)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Module not active", style = MaterialTheme.typography.titleSmall)
             Text(
@@ -663,3 +732,101 @@ private const val PREVIEW_TEXT = "It's a cruel summer"
 
 /** Where the preview freezes the karaoke sweep, so both colours are visible. */
 private const val PREVIEW_SUNG_FRACTION = 0.55f
+
+/** Frosted-glass surface: translucent tint, soft top-to-bottom fade and a bright rim light. */
+@Composable
+private fun GlassCard(
+    modifier: Modifier = Modifier,
+    tint: Color = Color.White,
+    content: @Composable () -> Unit,
+) {
+    val shape = RoundedCornerShape(26.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(tint.copy(alpha = 0.16f), tint.copy(alpha = 0.06f)),
+                ),
+            )
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.08f),
+                        Color.White.copy(alpha = 0.25f),
+                    ),
+                ),
+                shape,
+            ),
+    ) { content() }
+}
+
+/** Segmented glass tab bar. */
+@Composable
+private fun GlassTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Color.White.copy(alpha = 0.2f), shape)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        labels.forEachIndexed { index, label ->
+            val on = index == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(shape)
+                    .background(if (on) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    color = if (on) Color.White else Color.White.copy(alpha = 0.65f),
+                )
+            }
+        }
+    }
+}
+
+/** Dark gradient with soft colour glows; the translucent cards above it read as glass. */
+@Composable
+private fun GlassBackground() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF0A0A12), Color(0xFF15122A), Color(0xFF0B1620)),
+                ),
+            ),
+    ) {
+        Glow(Color(0xFF7C5CFF), Alignment.TopStart, 380.dp, (-110).dp, 40.dp)
+        Glow(Color(0xFF19C3B5), Alignment.CenterEnd, 340.dp, 120.dp, 60.dp)
+        Glow(Color(0xFFFF6FA8), Alignment.BottomStart, 320.dp, (-100).dp, (-30).dp)
+    }
+}
+
+@Composable
+private fun BoxScope.Glow(color: Color, alignment: Alignment, size: Dp, dx: Dp, dy: Dp) {
+    Box(
+        modifier = Modifier
+            .align(alignment)
+            .offset(dx, dy)
+            .size(size)
+            .background(
+                Brush.radialGradient(listOf(color.copy(alpha = 0.5f), Color.Transparent)),
+                CircleShape,
+            ),
+    )
+}

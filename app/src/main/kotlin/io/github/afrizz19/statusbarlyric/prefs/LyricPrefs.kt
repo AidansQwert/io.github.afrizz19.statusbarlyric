@@ -40,6 +40,9 @@ object LyricPrefs {
     /** Interpolate the highlight between ticks instead of stepping at the tick rate. */
     const val KEY_WORD_SMOOTH = "word_smooth"
 
+    /** Thin progress line under the lyric (on by default). */
+    const val KEY_PROGRESS_ON = "progress_on"
+
     /** Sentinel: use whatever colour the status bar clock currently has. */
     const val FOLLOW_CLOCK = 0
 
@@ -133,6 +136,7 @@ object LyricPrefs {
         val wordDimColor: Int,
         val wordDimAlpha: Float,
         val wordSmooth: Boolean,
+        val progressOn: Boolean = true,
     ) {
         companion object {
             val DEFAULT = Style(
@@ -180,6 +184,7 @@ object LyricPrefs {
         wordDimColor = prefs.getInt(KEY_WORD_DIM_COLOR, DERIVE_DIM),
         wordDimAlpha = prefs.getFloat(KEY_WORD_DIM_ALPHA, DEF_WORD_DIM_ALPHA),
         wordSmooth = prefs.getBoolean(KEY_WORD_SMOOTH, false),
+        progressOn = prefs.getBoolean(KEY_PROGRESS_ON, true),
     )
 
     fun save(prefs: SharedPreferences, style: Style) {
@@ -198,6 +203,7 @@ object LyricPrefs {
             .putInt(KEY_WORD_DIM_COLOR, style.wordDimColor)
             .putFloat(KEY_WORD_DIM_ALPHA, style.wordDimAlpha)
             .putBoolean(KEY_WORD_SMOOTH, style.wordSmooth)
+            .putBoolean(KEY_PROGRESS_ON, style.progressOn)
             .apply()
     }
 

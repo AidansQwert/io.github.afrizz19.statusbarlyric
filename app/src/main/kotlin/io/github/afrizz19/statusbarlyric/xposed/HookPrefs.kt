@@ -64,6 +64,7 @@ object HookPrefs {
             wordDimColor = prefs.getInt(LyricPrefs.KEY_WORD_DIM_COLOR, LyricPrefs.DERIVE_DIM),
             wordDimAlpha = prefs.getFloat(LyricPrefs.KEY_WORD_DIM_ALPHA, LyricPrefs.DEF_WORD_DIM_ALPHA),
             wordSmooth = prefs.getBoolean(LyricPrefs.KEY_WORD_SMOOTH, false),
+            progressOn = prefs.getBoolean(LyricPrefs.KEY_PROGRESS_ON, true),
         )
     }
 

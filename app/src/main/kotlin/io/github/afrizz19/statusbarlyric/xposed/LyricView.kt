@@ -53,6 +53,7 @@ class LyricView(context: Context) : TextView(context) {
 
     // Thin progress line under the lyric (0..1 of the current line; < 0 = hidden).
     private var lineProgress = -1f
+    private var progressEnabled = true
     private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val progressRect = RectF()
     private var loggedProgressFailure = false
@@ -62,7 +63,7 @@ class LyricView(context: Context) : TextView(context) {
      * hide the progress line. Cheap to call every tick: it only redraws on a visible change.
      */
     fun setLineProgress(fraction: Float) {
-        if (!SHOW_PROGRESS) return
+        if (!progressEnabled) return
         val v = if (fraction < 0f) -1f else fraction.coerceIn(0f, 1f)
         if (kotlin.math.abs(v - lineProgress) < 0.004f && (v >= 0f) == (lineProgress >= 0f)) return
         lineProgress = v
@@ -76,7 +77,7 @@ class LyricView(context: Context) : TextView(context) {
      */
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
-        if (!SHOW_PROGRESS || lineProgress < 0f) return
+        if (!progressEnabled || lineProgress < 0f) return
         try {
             drawProgress(canvas)
         } catch (t: Throwable) {
@@ -368,6 +369,12 @@ class LyricView(context: Context) : TextView(context) {
      */
     fun applyStyle(style: LyricPrefs.Style, resolvedColor: Int) {
         setLyricColor(resolvedColor)
+
+        if (progressEnabled != style.progressOn) {
+            progressEnabled = style.progressOn
+            if (!progressEnabled) lineProgress = -1f
+            invalidate()
+        }
 
         val density = resources.displayMetrics.density
         val newOutlineOn = style.outlineOn && style.outlineWidthDp > 0f
@@ -729,8 +736,6 @@ class LyricView(context: Context) : TextView(context) {
         /** Headroom so two rows never touch the status bar edges. */
         private const val FIT_SAFETY = 0.94f
         private const val PROBE_SIZE = 100f
-        /** Master switch for the progress line under the lyric. */
-        private const val SHOW_PROGRESS = true
         private const val PROGRESS_DP = 2f
         private const val PROGRESS_BOTTOM_DP = 1f
         private const val FADE_MS = 200L
